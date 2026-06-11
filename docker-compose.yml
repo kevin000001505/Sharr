@@ -1,0 +1,106 @@
+services:
+  wireguard:
+    image: linuxserver/wireguard
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - LOG_LEVEL=info
+    volumes:
+      - ./wg-data:/config
+    ports:
+      - "51820/udp"
+    networks:
+      p2p-network:
+        ipv4_address: 10.0.0.1
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - WG_CONF_PATH=/wg/wg0.conf
+      - SSH_KEY_PATH=/keys/wg_peer_key
+      - ALLOWED_BASE_DIR=${ALLOWED_BASE_DIR:-/data}
+    volumes:
+      - ./wg-data/wg0.conf:/wg/wg0.conf:ro
+      - ./keys:/keys:ro
+      - ${DATA_DIR:-./data}:/data
+    depends_on:
+      - redis
+      - rabbitmq
+      - wireguard
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: worker
+    network_mode: "service:wireguard"
+    environment:
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - WG_CONF_PATH=/wg/wg0.conf
+      - SSH_KEY_PATH=/keys/wg_peer_key
+      - ALLOWED_BASE_DIR=${ALLOWED_BASE_DIR:-/data}
+    volumes:
+      - ./wg-data/wg0.conf:/wg/wg0.conf:ro
+      - ./keys:/keys:ro
+      - ${DATA_DIR:-./data}:/data
+    depends_on:
+      - redis
+      - rabbitmq
+      - wireguard
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+networks:
+  p2p-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+
+volumes:
+  redis-data:
+  rabbitmq-data:
