@@ -1,0 +1,30 @@
+# Copy this file to wg-data/wg0.conf and fill in the placeholders below.
+#   cp wg-data/wg0.conf.example wg-data/wg0.conf
+#
+# This is THIS machine's WireGuard config — one [Interface] for yourself, one
+# [Peer] block per friend. The "# name" comment directly under each [Peer] is
+# the friendly name Sharr shows in the UI, so don't drop it.
+#
+# See SETUP.md section 1 for how to generate keys (`wg genkey | tee privatekey
+# | wg pubkey > publickey`) and pick tunnel IPs.
+
+[Interface]
+Address = <YOUR_TUNNEL_IP>/24          # e.g. 10.0.0.1
+PrivateKey = <YOUR_PRIVATE_KEY>        # from your own `privatekey` file — never share this
+ListenPort = 51820
+
+# Friend B
+[Peer]
+# alice
+PublicKey = <FRIEND_B_PUBLIC_KEY>      # from Friend B's `publickey` file
+AllowedIPs = <FRIEND_B_TUNNEL_IP>/32   # e.g. 10.0.0.2/32
+Endpoint = <FRIEND_B_PUBLIC_IP>:51820  # Friend B's real internet address
+PersistentKeepalive = 25
+
+# Friend C
+[Peer]
+# bob
+PublicKey = <FRIEND_C_PUBLIC_KEY>
+AllowedIPs = <FRIEND_C_TUNNEL_IP>/32
+Endpoint = <FRIEND_C_PUBLIC_IP>:51820
+PersistentKeepalive = 25

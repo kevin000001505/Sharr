@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Sharr secrets — real WireGuard/SSH keys and media, never commit these.
+# (wg-data/wg0.conf.example stays tracked as a template.)
+wg-data/wg0.conf
+keys/
+data/
