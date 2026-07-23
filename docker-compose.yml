@@ -10,9 +10,36 @@ services:
       - ./wg-data:/config
     ports:
       - "51820/udp"
+      # The api shares this netns, so its port is published here. The same
+      # port is reachable by peers over the tunnel interface (wg0).
+      - "8000:8000"
     networks:
       p2p-network:
-        ipv4_address: 10.0.0.1
+        ipv4_address: 172.20.0.2
+    restart: unless-stopped
+
+  # Receiving end of rsync-over-SSH. Shares the wireguard netns so peers reach
+  # it at <tunnel-ip>:2222. Authorized via ./keys/authorized_keys (the PUBLIC
+  # keys of your peers). Writes received media into /data.
+  ssh:
+    image: linuxserver/openssh-server
+    container_name: ssh
+    network_mode: "service:wireguard"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=${SSH_USER:-sharr}
+      - PUBLIC_KEY_FILE=/config/authorized_keys
+      - LISTEN_PORT=2222
+      # rsync is the receiving half of the transfer but is not in the base
+      # image; this LinuxServer mod installs it at container start.
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=rsync
+    volumes:
+      - ./keys/authorized_keys:/config/authorized_keys:ro
+      - ${DATA_DIR:-./data}:/data
+    depends_on:
+      - wireguard
     restart: unless-stopped
 
   redis:
@@ -46,8 +73,10 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: api
-    ports:
-      - "8000:8000"
+    # Share the WireGuard netns so peers can reach this Sharr API over the
+    # tunnel (and so we can reach theirs). Port 8000 is published on the
+    # wireguard service above. Reaches redis/rabbitmq via that shared network.
+    network_mode: "service:wireguard"
     environment:
       - REDIS_HOST=redis
       - RABBITMQ_HOST=rabbitmq
@@ -56,6 +85,11 @@ services:
       - WG_CONF_PATH=/wg/wg0.conf
       - SSH_KEY_PATH=/keys/wg_peer_key
       - ALLOWED_BASE_DIR=${ALLOWED_BASE_DIR:-/data}
+      - SHARR_PEER_PORT=${SHARR_PEER_PORT:-8000}
+      - MOVIES_DIR=${MOVIES_DIR:-/data/movie}
+      - TV_DIR=${TV_DIR:-/data/tv_show/tv}
+      # THIS node's TMDB key for poster lookups (never leaves the box).
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
     volumes:
       - ./wg-data/wg0.conf:/wg/wg0.conf:ro
       - ./keys:/keys:ro
@@ -64,8 +98,6 @@ services:
       - redis
       - rabbitmq
       - wireguard
-    networks:
-      - p2p-network
     restart: unless-stopped
 
   worker:
@@ -90,16 +122,21 @@ services:
       - redis
       - rabbitmq
       - wireguard
-    networks:
-      - p2p-network
+    # No `networks:` here — `network_mode: service:wireguard` shares the
+    # wireguard container's netns, and the two are mutually exclusive.
     restart: unless-stopped
 
 networks:
+  # NOTE: this bridge subnet must NOT overlap the WireGuard tunnel subnet
+  # (10.0.0.0/24). The api/worker share the wireguard netns, so if the bridge
+  # also used 10.0.0.0/24 the two interfaces would collide and routing to a peer
+  # at 10.0.0.x would be ambiguous. 172.20.0.0/24 is only used for the local
+  # bridge (reaching redis/rabbitmq by service name).
   p2p-network:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.0.0.0/24
+        - subnet: 172.20.0.0/24
 
 volumes:
   redis-data:

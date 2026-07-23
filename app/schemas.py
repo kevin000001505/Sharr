@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -34,3 +36,20 @@ class ProgressEvent(BaseModel):
     bytes_sent: int
     speed: str
     status: str
+
+
+class LibraryRequest(BaseModel):
+    """Received by the OWNER from a peer — 'send me this media'."""
+    kind: str                                # movie | episode | season | series
+    id: str                                  # folder name under the owner's movie/tv root
+    season: Optional[int] = None
+    episode_path: Optional[str] = None       # path relative to the owner's TV root
+    dest_base: str                           # category root on the REQUESTER's machine
+
+
+class RemoteRequest(BaseModel):
+    """Sent by the REQUESTER's browser to its own Sharr to pull from a peer."""
+    kind: str
+    id: str
+    season: Optional[int] = None
+    episode_path: Optional[str] = None

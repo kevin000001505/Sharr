@@ -32,6 +32,22 @@ def new_job(req) -> TransferJob:
     )
 
 
+def new_outgoing_job(target_peer_ip: str, source_path: str, dest_path: str) -> TransferJob:
+    """Job created when a peer requests media from us. The source lives on this
+    node (so we confine it), but the destination is on the requesting peer's
+    machine — it was chosen by that validated peer, so we pass it through."""
+    now = datetime.now(timezone.utc).isoformat()
+    return TransferJob(
+        job_id=str(uuid.uuid4()),
+        target_peer_ip=target_peer_ip,
+        source_path=_validate_path_confinement(source_path, "source"),
+        dest_path=dest_path,
+        status="queued",
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def build_rsync_command(job: TransferJob) -> list[str]:
     ssh_key = settings.ssh_key_path
     ssh_port = settings.ssh_port
@@ -40,6 +56,11 @@ def build_rsync_command(job: TransferJob) -> list[str]:
         "-a",
         "--info=progress2",
         "--partial",
+        # Create missing parent directories on the receiver. The library-request
+        # flow targets <dest_base>/<title>/<file>, where the per-title folder does
+        # not exist yet; without this rsync fails with "change_dir ... No such
+        # file or directory" (exit 3). Requires rsync >= 3.2.3 on both ends.
+        "--mkpath",
         "-e",
         f"ssh -i {ssh_key} "
         f"-o BatchMode=yes "
@@ -47,7 +68,7 @@ def build_rsync_command(job: TransferJob) -> list[str]:
         f"-o UserKnownHostsFile=/dev/null "
         f"-p {ssh_port}",
         job.source_path,
-        f"{job.target_peer_ip}:{job.dest_path}",
+        f"{settings.ssh_user}@{job.target_peer_ip}:{job.dest_path}",
     ]
     return cmd
 

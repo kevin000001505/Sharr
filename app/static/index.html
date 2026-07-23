@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sharr — Shared Media</title>
+<style>
+  :root {
+    --bg:#0d0f14; --panel:#161a22; --panel-2:#1e232d; --border:#2a313c;
+    --text:#e7eaf0; --muted:#8a93a3; --accent:#4f8cff; --accent-2:#3a6fd8;
+    --green:#34c759; --red:#ff5247; --amber:#ffb020; --radius:12px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:16px; padding:14px 22px;
+    border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:1.1rem; margin:0; }
+  header h1 span { color:var(--accent); }
+  .spacer { flex:1; }
+  .peer-pick { display:flex; align-items:center; gap:8px; }
+  select, input[type=text] { font:inherit; color:var(--text); background:var(--panel-2);
+    border:1px solid var(--border); border-radius:8px; padding:8px 11px; outline:none; }
+  select:focus, input:focus { border-color:var(--accent); }
+  button { font:inherit; color:var(--text); cursor:pointer; border:1px solid var(--border);
+    background:var(--panel-2); padding:8px 13px; border-radius:8px; transition:.15s; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.primary:hover { background:var(--accent-2); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; }
+  .dot.online { background:var(--green); box-shadow:0 0 0 3px rgba(52,199,89,.15); }
+
+  nav.tabs { display:flex; gap:4px; padding:0 22px; background:var(--panel); border-bottom:1px solid var(--border); }
+  nav.tabs button { background:transparent; border:none; border-bottom:2px solid transparent;
+    border-radius:0; padding:12px 16px; color:var(--muted); }
+  nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }
+
+  main { max-width:1240px; margin:0 auto; padding:20px 22px 60px; }
+  .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+  .toolbar input[type=text] { flex:1; min-width:200px; }
+  .count { color:var(--muted); font-size:.85rem; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:18px; }
+  .poster { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    overflow:hidden; cursor:pointer; transition:.15s; position:relative; }
+  .poster:hover { transform:translateY(-3px); border-color:var(--accent); }
+  .poster .img { aspect-ratio:2/3; background:var(--panel-2) center/cover no-repeat; display:flex;
+    align-items:center; justify-content:center; color:var(--muted); font-size:2rem; }
+  .poster .meta { padding:9px 10px; }
+  .poster .t { font-size:.85rem; font-weight:600; line-height:1.25; max-height:2.5em; overflow:hidden; }
+  .poster .y { font-size:.75rem; color:var(--muted); margin-top:3px; display:flex; justify-content:space-between; }
+
+  .empty { color:var(--muted); text-align:center; padding:60px 0; }
+
+  /* modal */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.66); display:none;
+    align-items:center; justify-content:center; z-index:20; padding:20px; }
+  .modal-bg.show { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    width:680px; max-width:100%; max-height:86vh; overflow:hidden; display:flex; flex-direction:column; }
+  .modal-body { padding:0; overflow-y:auto; }
+  .detail-head { display:flex; gap:18px; padding:20px; }
+  .detail-head .img { width:130px; aspect-ratio:2/3; border-radius:8px; background:var(--panel-2) center/cover no-repeat; flex-shrink:0; }
+  .detail-head h3 { margin:0 0 4px; }
+  .detail-head .sub { color:var(--muted); font-size:.85rem; margin-bottom:10px; }
+  .detail-head .ov { color:var(--text); font-size:.85rem; opacity:.85; max-height:7em; overflow:auto; }
+  .detail-actions { padding:0 20px 16px; display:flex; gap:10px; flex-wrap:wrap; }
+  .season { border-top:1px solid var(--border); }
+  .season h4 { margin:0; padding:12px 20px; font-size:.85rem; color:var(--muted);
+    display:flex; justify-content:space-between; align-items:center; }
+  .ep { display:flex; align-items:center; gap:10px; padding:8px 20px; font-size:.85rem; }
+  .ep:hover { background:var(--panel-2); }
+  .ep .n { color:var(--muted); width:48px; }
+  .ep .t { flex:1; }
+  .ep button { padding:4px 10px; font-size:.78rem; }
+  .closex { position:absolute; top:14px; right:18px; background:transparent; border:none; font-size:1.1rem; color:var(--muted); }
+
+  /* downloads */
+  .job { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .job-top { display:flex; justify-content:space-between; gap:10px; }
+  .job-name { font-weight:600; word-break:break-all; }
+  .job-sub { font-size:.78rem; color:var(--muted); margin-top:2px; word-break:break-all; }
+  .badge { font-size:.72rem; padding:3px 9px; border-radius:999px; text-transform:capitalize; font-weight:600; white-space:nowrap; height:fit-content; }
+  .badge.queued{background:rgba(255,176,32,.15);color:var(--amber);}
+  .badge.running{background:rgba(79,140,255,.15);color:var(--accent);}
+  .badge.completed{background:rgba(52,199,89,.15);color:var(--green);}
+  .badge.failed{background:rgba(255,82,71,.15);color:var(--red);}
+  .badge.cancelled{background:rgba(138,147,163,.15);color:var(--muted);}
+  .bar { height:8px; background:var(--bg); border-radius:999px; overflow:hidden; margin:11px 0 7px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
+  .bar.completed > i{background:var(--green);} .bar.failed > i{background:var(--red);} .bar.cancelled > i{background:var(--muted);}
+  .job-meta { display:flex; justify-content:space-between; font-size:.78rem; color:var(--muted); }
+
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--border); padding:12px 18px; border-radius:10px;
+    opacity:0; transition:.25s; z-index:30; max-width:90%; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.err { border-color:var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shar<span>r</span></h1>
+  <div class="spacer"></div>
+  <div class="peer-pick">
+    <span class="dot" id="peerDot"></span>
+    <select id="peerSelect"><option value="">Loading friends…</option></select>
+    <button class="ghost" id="refreshPeers" title="Refresh">↻</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="movies" class="active">Movies</button>
+  <button data-tab="tv">TV Shows</button>
+  <button data-tab="downloads">Downloads</button>
+  <button data-tab="shared">Shared by me</button>
+</nav>
+
+<main>
+  <div id="view-movies" class="view">
+    <div class="toolbar">
+      <input type="text" id="searchMovies" placeholder="Search movies…" />
+      <span class="count" id="countMovies"></span>
+    </div>
+    <div class="grid" id="gridMovies"></div>
+  </div>
+
+  <div id="view-tv" class="view" hidden>
+    <div class="toolbar">
+      <input type="text" id="searchTv" placeholder="Search shows…" />
+      <span class="count" id="countTv"></span>
+    </div>
+    <div class="grid" id="gridTv"></div>
+  </div>
+
+  <div id="view-downloads" class="view" hidden>
+    <div id="downloads"></div>
+  </div>
+
+  <div id="view-shared" class="view" hidden>
+    <div id="shared"></div>
+  </div>
+</main>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <button class="closex" id="closeModal">✕</button>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const cache = { movies: [], shows: [] };
+const dlStreams = {};                 // job_id -> EventSource
+const DL_KEY = "sharr_downloads";
+
+function peer() { return $("peerSelect").value; }
+function fmtBytes(n){ if(!n) return "0 B"; const u=["B","KB","MB","GB","TB"];let i=0;n=+n;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?1:0)+" "+u[i]; }
+function toast(m,err){ const t=$("toast"); t.textContent=m; t.className="toast show"+(err?" err":"");
+  setTimeout(()=>t.className="toast",3500); }
+
+async function api(path, opts){
+  const res = await fetch(path, opts);
+  let body=null; try{ body=await res.json(); }catch(_){}
+  if(!res.ok){ throw new Error((body&&(body.detail||body.error))||res.statusText); }
+  return body;
+}
+function loadDl(){ try{ return JSON.parse(localStorage.getItem(DL_KEY))||[]; }catch{ return []; } }
+function saveDl(list){ localStorage.setItem(DL_KEY, JSON.stringify(list.slice(-100))); }
+function trackDownload(peerIp, jobId, title){
+  const list = loadDl();
+  list.push({ peer:peerIp, job_id:jobId, title, ts:Date.now() });
+  saveDl(list);
+}
+
+// ---------- tabs ----------
+document.querySelectorAll("nav.tabs button").forEach(b=>{
+  b.onclick = () => {
+    document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    document.querySelectorAll(".view").forEach(v=>v.hidden=true);
+    $("view-"+b.dataset.tab).hidden=false;
+    if(b.dataset.tab==="downloads") renderDownloads();
+    if(b.dataset.tab==="shared") loadShared();
+  };
+});
+
+// ---------- peers ----------
+async function loadPeers(){
+  const sel = $("peerSelect");
+  try{
+    const peers = await api("/api/peers");
+    if(!peers.length){ sel.innerHTML=`<option value="">No friends found</option>`; return; }
+    sel.innerHTML = peers.map(p=>`<option value="${p.tunnel_ip}" data-online="${p.online}">${p.name} (${p.tunnel_ip})</option>`).join("");
+    onPeerChange();
+  }catch(e){ sel.innerHTML=`<option value="">Could not load friends</option>`; }
+}
+function onPeerChange(){
+  const opt = $("peerSelect").selectedOptions[0];
+  $("peerDot").className = "dot" + (opt && opt.dataset.online==="true" ? " online":"");
+  cache.movies=[]; cache.shows=[];
+  loadMovies();
+  if(!$("view-tv").hidden) loadShows();
+}
+
+// ---------- movies ----------
+async function loadMovies(){
+  const grid=$("gridMovies"); const ip=peer();
+  if(!ip){ grid.innerHTML=`<div class="empty">Pick a friend above.</div>`; return; }
+  grid.innerHTML=`<div class="empty">Loading ${ip}’s movies…</div>`;
+  try{
+    cache.movies = await api(`/api/remote/${ip}/movies`);
+    renderMovies();
+  }catch(e){ grid.innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+function renderMovies(){
+  const q=$("searchMovies").value.toLowerCase();
+  const items=cache.movies.filter(m=>m.title.toLowerCase().includes(q));
+  $("countMovies").textContent=`${items.length} title${items.length!==1?"s":""}`;
+  $("gridMovies").innerHTML = items.length? items.map(m=>posterCard(m,"movie")).join("")
+    : `<div class="empty">No movies.</div>`;
+  bindCards($("gridMovies"), cache.movies, "movie");
+}
+
+// ---------- tv ----------
+async function loadShows(){
+  const grid=$("gridTv"); const ip=peer();
+  if(!ip){ grid.innerHTML=`<div class="empty">Pick a friend above.</div>`; return; }
+  grid.innerHTML=`<div class="empty">Loading ${ip}’s shows…</div>`;
+  try{
+    cache.shows = await api(`/api/remote/${ip}/shows`);
+    renderShows();
+  }catch(e){ grid.innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+function renderShows(){
+  const q=$("searchTv").value.toLowerCase();
+  const items=cache.shows.filter(s=>s.title.toLowerCase().includes(q));
+  $("countTv").textContent=`${items.length} show${items.length!==1?"s":""}`;
+  $("gridTv").innerHTML = items.length? items.map(s=>posterCard(s,"series")).join("")
+    : `<div class="empty">No shows.</div>`;
+  bindCards($("gridTv"), cache.shows, "series");
+}
+
+function posterCard(item, kind){
+  const img = item.poster ? `style="background-image:url('${item.poster}')"` : "";
+  const sub = kind==="series" ? `${item.episode_count} ep` : fmtBytes(item.size);
+  return `<div class="poster" data-id="${item.id}">
+    <div class="img" ${img}>${item.poster?"":"🎬"}</div>
+    <div class="meta"><div class="t">${item.title}</div>
+      <div class="y"><span>${item.year||""}</span><span>${sub}</span></div></div></div>`;
+}
+function bindCards(grid, list, kind){
+  grid.querySelectorAll(".poster").forEach(c=>{
+    c.onclick = () => {
+      const item = list.find(x=>String(x.id)===c.dataset.id);
+      kind==="movie" ? openMovie(item) : openShow(item);
+    };
+  });
+}
+
+// ---------- detail modals ----------
+function openModal(html){ $("modalBody").innerHTML=html; $("modalBg").classList.add("show"); }
+function closeModal(){ $("modalBg").classList.remove("show"); }
+
+function openMovie(m){
+  const img = m.poster?`style="background-image:url('${m.poster}')"`:"";
+  openModal(`
+    <div class="detail-head">
+      <div class="img" ${img}></div>
+      <div>
+        <h3>${m.title}</h3>
+        <div class="sub">${m.year||""} · ${fmtBytes(m.size)}${m.runtime?` · ${m.runtime} min`:""}</div>
+        <div class="ov">${m.overview||""}</div>
+      </div>
+    </div>
+    <div class="detail-actions">
+      <button class="primary" id="reqMovie">⬇︎ Request this movie</button>
+    </div>`);
+  $("reqMovie").onclick = () => requestItem({kind:"movie", id:m.id}, m.title);
+}
+
+async function openShow(s){
+  openModal(`<div class="detail-head"><div class="img" ${s.poster?`style="background-image:url('${s.poster}')"`:""}></div>
+    <div><h3>${s.title}</h3><div class="sub">${s.year||""} · ${s.episode_count} episodes</div>
+    <div class="ov">${s.overview||""}</div></div></div>
+    <div class="detail-actions"><button class="primary" id="reqSeries">⬇︎ Request whole series</button></div>
+    <div id="seasons"><div class="empty">Loading episodes…</div></div>`);
+  $("reqSeries").onclick = () => requestItem({kind:"series", id:s.id}, s.title);
+  try{
+    const detail = await api(`/api/remote/${peer()}/shows/${s.id}`);
+    $("seasons").innerHTML = detail.seasons.map(se=>`
+      <div class="season">
+        <h4>Season ${se.season}
+          <button data-season="${se.season}">Request season</button></h4>
+        ${se.episodes.map(ep=>`
+          <div class="ep"><span class="n">S${se.season}E${ep.episode}</span>
+            <span class="t">${ep.title||""}</span>
+            <button data-epfile="${ep.episode_path}">Request</button></div>`).join("")}
+      </div>`).join("") || `<div class="empty">No episodes on disk.</div>`;
+    $("seasons").querySelectorAll("[data-season]").forEach(b=>
+      b.onclick=()=>requestItem({kind:"season", id:s.id, season:+b.dataset.season}, `${s.title} S${b.dataset.season}`));
+    $("seasons").querySelectorAll("[data-epfile]").forEach(b=>
+      b.onclick=()=>requestItem({kind:"episode", id:s.id, episode_path:b.dataset.epfile}, s.title));
+  }catch(e){ $("seasons").innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+
+// ---------- request ----------
+async function requestItem(body, title){
+  const ip=peer();
+  try{
+    const res = await api(`/api/remote/${ip}/request`, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+    (res.job_ids||[]).forEach(jid=>trackDownload(ip, jid, title));
+    toast(`Requested — ${res.count} file${res.count!==1?"s":""} queued`);
+    closeModal();
+  }catch(e){ toast(e.message, true); }
+}
+
+// ---------- downloads (things I requested) ----------
+async function renderDownloads(){
+  const box=$("downloads");
+  const list=loadDl().slice().reverse();
+  if(!list.length){ box.innerHTML=`<div class="empty">No downloads yet. Request something from a friend.</div>`; return; }
+  box.innerHTML = list.map(d=>`
+    <div class="job" id="dl-${d.job_id}" data-peer="${d.peer}" data-job="${d.job_id}">
+      <div class="job-top"><div><div class="job-name">${d.title}</div>
+        <div class="job-sub">from ${d.peer}</div></div>
+        <span class="badge queued">queued</span></div>
+      <div class="bar"><i></i></div>
+      <div class="job-meta"><span class="info">waiting…</span><span></span></div>
+    </div>`).join("");
+  list.forEach(d=>streamDownload(d.peer, d.job_id));
+}
+function streamDownload(peerIp, jobId){
+  if(dlStreams[jobId]) return;
+  const es=new EventSource(`/api/remote/${peerIp}/transfers/${jobId}/stream`);
+  dlStreams[jobId]=es;
+  es.onmessage=(ev)=>{ let d; try{ d=JSON.parse(ev.data);}catch{return;} updateJobCard("dl-"+jobId,d);
+    if(["completed","failed","cancelled"].includes(d.status)){ es.close(); delete dlStreams[jobId]; } };
+  es.onerror=()=>{ es.close(); delete dlStreams[jobId]; };
+}
+function updateJobCard(elId, d){
+  const el=$(elId); if(!el) return;
+  const pct=Math.min(100,Math.round(d.progress||0));
+  el.querySelector(".badge").className="badge "+d.status;
+  el.querySelector(".badge").textContent=d.status;
+  el.querySelector(".bar").className="bar "+d.status;
+  el.querySelector(".bar > i").style.width=pct+"%";
+  el.querySelector(".info").textContent=`${pct}% · ${fmtBytes(d.bytes_sent)}${d.speed?" · "+d.speed:""}`;
+}
+
+// ---------- shared by me (things friends requested from me) ----------
+async function loadShared(){
+  const box=$("shared");
+  try{
+    const jobs=await api("/api/transfers");
+    if(!jobs.length){ box.innerHTML=`<div class="empty">Nothing shared yet.</div>`; return; }
+    box.innerHTML=jobs.sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||"")).map(j=>{
+      const pct=Math.min(100,Math.round(j.progress||0));
+      return `<div class="job"><div class="job-top">
+        <div><div class="job-name">${(j.source_path||"").split("/").pop()}</div>
+        <div class="job-sub">→ ${j.target_peer_ip}</div></div>
+        <span class="badge ${j.status}">${j.status}</span></div>
+        <div class="bar ${j.status}"><i style="width:${pct}%"></i></div>
+        <div class="job-meta"><span>${pct}% · ${fmtBytes(j.bytes_sent)}${j.speed?" · "+j.speed:""}</span><span></span></div>
+      </div>`;}).join("");
+  }catch(e){ box.innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+
+// ---------- wire up ----------
+$("refreshPeers").onclick=loadPeers;
+$("peerSelect").onchange=onPeerChange;
+$("searchMovies").oninput=renderMovies;
+$("searchTv").oninput=renderShows;
+$("closeModal").onclick=closeModal;
+$("modalBg").onclick=(e)=>{ if(e.target===$("modalBg")) closeModal(); };
+document.querySelector('[data-tab="tv"]').addEventListener("click",()=>{ if(!cache.shows.length) loadShows(); });
+loadPeers();
+setInterval(()=>{ if(!$("view-shared").hidden) loadShared(); }, 8000);
+</script>
+</body>
+</html>

@@ -169,20 +169,52 @@ class TestIsValidPeer:
         assert is_valid_peer("10.0.0.2") is False
 
 
-class TestPeerParsing:
-    @patch("app.peers.subprocess.run")
-    def test_self_ip_extraction_from_wg_show(self, mock_subprocess):
-        mock_subprocess.return_value = MagicMock(
-            stdout="  address: 10.0.0.2/24\n  peer: some-key\n"
-        )
-        result = __import__("app.peers", fromlist=["_get_self_ip"])._get_self_ip()
-        assert result == "10.0.0.2"
+WG_CONF = """\
+[Interface]
+Address = 10.0.0.2/24
+PrivateKey = privkey
+ListenPort = 51820
 
-    @patch("app.peers.subprocess.run")
-    def test_self_ip_fallback(self, mock_subprocess):
-        mock_subprocess.side_effect = Exception("wg not available")
-        result = __import__("app.peers", fromlist=["_get_self_ip"])._get_self_ip()
-        assert result == "10.0.0.1"
+# Friend A
+[Peer]
+# alice
+PublicKey = keyA
+AllowedIPs = 10.0.0.1/32
+Endpoint = 203.0.113.1:51820
+
+# Friend C
+[Peer]
+# carol
+PublicKey = keyC
+AllowedIPs = 10.0.0.3/32
+Endpoint = 203.0.113.3:51820
+"""
+
+
+class TestPeerParsing:
+    def test_self_ip_extraction_from_interface(self, tmp_path):
+        import app.peers as peers_mod
+        conf = tmp_path / "wg0.conf"
+        conf.write_text(WG_CONF)
+        with patch.object(peers_mod.settings, "wg_conf_path", str(conf)):
+            assert peers_mod._get_self_ip() == "10.0.0.2"
+
+    def test_self_ip_fallback(self, tmp_path):
+        import app.peers as peers_mod
+        with patch.object(peers_mod.settings, "wg_conf_path",
+                          str(tmp_path / "missing.conf")):
+            assert peers_mod._get_self_ip() == "10.0.0.1"
+
+    def test_peer_names_not_shifted(self, tmp_path):
+        """The trailing '# Friend C' comment must not mislabel the first peer."""
+        import app.peers as peers_mod
+        conf = tmp_path / "wg0.conf"
+        conf.write_text(WG_CONF)
+        with patch.object(peers_mod.settings, "wg_conf_path", str(conf)):
+            peers = peers_mod.parse_wg_peers()
+        by_ip = {p.tunnel_ip: p.name for p in peers}
+        # Self (10.0.0.2) is excluded; the other two keep their own names.
+        assert by_ip == {"10.0.0.1": "alice", "10.0.0.3": "carol"}
 
 
 class TestHTTPRoutes:
@@ -239,6 +271,118 @@ class TestHTTPRoutes:
             resp = client.post("/api/transfers/abc123/cancel")
             assert resp.status_code == 200
             mock_cancel.assert_called_once_with("abc123")
+
+
+def _make_media_tree(tmp_path):
+    """Build the expected on-disk layout: movie/<title>/, tv_show/tv/<show>/seasonN/."""
+    movies = tmp_path / "movie"
+    tv = tmp_path / "tv_show" / "tv"
+    m = movies / "The Matrix (1999)"
+    m.mkdir(parents=True)
+    (m / "The Matrix (1999).mkv").write_bytes(b"x" * 100)
+    empty = movies / "Empty Folder"
+    empty.mkdir()
+    show = tv / "Breaking Bad (2008)"
+    s1 = show / "season1"
+    s1.mkdir(parents=True)
+    (s1 / "S01E01 Pilot.mkv").write_bytes(b"x" * 10)
+    (s1 / "S01E02 Cat.mkv").write_bytes(b"x" * 10)
+    s2 = show / "Season 2"
+    s2.mkdir()
+    (s2 / "S02E01.mp4").write_bytes(b"x" * 10)
+    return movies, tv
+
+
+@pytest.fixture
+def media_settings(tmp_path):
+    import app.library as library_mod
+    movies, tv = _make_media_tree(tmp_path)
+    with patch.object(library_mod.settings, "movies_dir", str(movies)), \
+         patch.object(library_mod.settings, "tv_dir", str(tv)), \
+         patch.object(library_mod, "_tmdb_lookup",
+                      return_value={"poster": "http://img/p.jpg",
+                                    "overview": "plot", "year": None}):
+        yield library_mod
+
+
+class TestLibraryScanner:
+    def test_list_movies(self, media_settings):
+        movies = media_settings.list_movies()
+        assert len(movies) == 1  # empty folder skipped
+        m = movies[0]
+        assert m["id"] == "The Matrix (1999)"
+        assert m["title"] == "The Matrix"
+        assert m["year"] == 1999
+        assert m["poster"] == "http://img/p.jpg"
+        assert m["size"] == 100
+
+    def test_list_shows(self, media_settings):
+        shows = media_settings.list_shows()
+        assert len(shows) == 1
+        s = shows[0]
+        assert s["title"] == "Breaking Bad"
+        assert s["episode_count"] == 3
+        assert s["season_count"] == 2
+
+    def test_show_detail_seasons_and_episodes(self, media_settings):
+        d = media_settings.show_detail("Breaking Bad (2008)")
+        assert [s["season"] for s in d["seasons"]] == [1, 2]
+        eps = d["seasons"][0]["episodes"]
+        assert [e["episode"] for e in eps] == [1, 2]
+        assert eps[0]["episode_path"] == "Breaking Bad (2008)/season1/S01E01 Pilot.mkv"
+
+    def test_resolve_movie(self, media_settings):
+        src, rel = media_settings.resolve_request("movie", "The Matrix (1999)")
+        assert src.endswith("/The Matrix (1999)")
+        assert rel == ""
+
+    def test_resolve_season_and_episode(self, media_settings):
+        src, rel = media_settings.resolve_request(
+            "season", "Breaking Bad (2008)", season=2)
+        assert src.endswith("/Season 2")
+        assert rel == "Breaking Bad (2008)"
+        src, rel = media_settings.resolve_request(
+            "episode", "Breaking Bad (2008)",
+            episode_path="Breaking Bad (2008)/season1/S01E01 Pilot.mkv")
+        assert src.endswith("S01E01 Pilot.mkv")
+        assert rel == "Breaking Bad (2008)/season1"
+
+    def test_resolve_rejects_traversal(self, media_settings):
+        with pytest.raises(media_settings.LibraryError):
+            media_settings.resolve_request("movie", "../../etc")
+        with pytest.raises(media_settings.LibraryError):
+            media_settings.resolve_request(
+                "episode", "x", episode_path="../../../etc/passwd")
+
+    def test_resolve_unknown_title(self, media_settings):
+        with pytest.raises(media_settings.LibraryError):
+            media_settings.resolve_request("movie", "Nope (2000)")
+
+
+class TestTmdbLookup:
+    def test_parses_search_response(self):
+        import app.library as library_mod
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {"results": [{
+            "poster_path": "/abc.jpg",
+            "overview": "A hacker discovers reality.",
+            "release_date": "1999-03-31",
+        }]}
+        fake_redis = MagicMock()
+        fake_redis.get.return_value = None
+        with patch.object(library_mod.settings, "tmdb_api_key", "k"), \
+             patch.object(library_mod, "get_redis", return_value=fake_redis), \
+             patch.object(library_mod.httpx, "get", return_value=fake_resp) as g:
+            meta = library_mod._tmdb_lookup("The Matrix", 1999, "movie")
+        assert meta == {"poster": "https://image.tmdb.org/t/p/w342/abc.jpg",
+                        "overview": "A hacker discovers reality.", "year": 1999}
+        assert g.call_args.kwargs["params"]["year"] == 1999
+        fake_redis.set.assert_called_once()
+
+    def test_no_key_returns_empty(self):
+        import app.library as library_mod
+        with patch.object(library_mod.settings, "tmdb_api_key", ""):
+            assert library_mod._tmdb_lookup("X", None, "movie") == {}
 
 
 class TestWorkerReRaise:
